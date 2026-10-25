@@ -160,6 +160,8 @@ namespace RNS {
 		*/
 		inline void accepts_links(bool accepts) { assert(_object); _object->_accept_link_requests = accepts; }
 		inline bool accepts_links() { assert(_object); return _object->_accept_link_requests; }
+		inline void set_default_app_data(const Bytes& app_data) { assert(_object); _object->_default_app_data = app_data; }
+		inline void clear_default_app_data() { assert(_object); _object->_default_app_data = {Bytes::NONE}; }
 
 		/*
 			Registers a function to be called when a link has been established to
