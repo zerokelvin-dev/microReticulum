@@ -377,9 +377,8 @@ DestinationEntry empty_destination_entry;
 	//p thread.start()
 
 	// Load transport-related data
-	if (Reticulum::transport_enabled()) {
-		INFO("Transport mode is enabled");
-
+	// Every node needs these stores, not just transport nodes.
+	{
 		// Read in path table
 		//read_path_table();
 #if defined(RNS_USE_FS) && RNS_PERSIST_PATHS
@@ -432,6 +431,10 @@ DestinationEntry empty_destination_entry;
 			}
 		}
 #endif // RNS_USE_FS && RNS_PERSIST_HASHLIST
+	}
+
+	if (Reticulum::transport_enabled()) {
+		INFO("Transport mode is enabled");
 
 		// CBA The following write and clean is very resource intensive so skip at startup
 		// and let a later (optimized) scheduled write and clean take care of it.
