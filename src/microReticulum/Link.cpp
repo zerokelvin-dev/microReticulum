@@ -1264,15 +1264,12 @@ void Link::receive(const Packet& packet) {
 							//p request_id = unpacked_response[0]
 							//p response_data = unpacked_response[1]
                             //p transfer_size = len(umsgpack.packb(response_data))-2
-							MsgPack::Unpacker unpacker;
-							unpacker.feed(packed_response.data(), packed_response.size());
-							MsgPack::bin_t<uint8_t> request_id;
-							MsgPack::bin_t<uint8_t> response_data;
-							unpacker.from_array(request_id, response_data);
-							MsgPack::Packer packer;
-							packer.serialize(response_data);
-							size_t transfer_size = packer.size() - 2;
-							handle_response(Bytes(request_id.data(), request_id.size()), Bytes(response_data.data(), response_data.size()), transfer_size, transfer_size);
+							Bytes request_id;
+							Bytes response_data;
+							if (unpack_response_envelope(packed_response, request_id, response_data)) {
+								size_t transfer_size = response_data.size() > 2 ? response_data.size() - 2 : 0;
+								handle_response(request_id, response_data, transfer_size, transfer_size);
+							}
 						}
 					}
 					catch (const std::exception& e) {
