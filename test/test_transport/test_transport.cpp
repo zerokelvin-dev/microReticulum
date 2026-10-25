@@ -438,6 +438,35 @@ void test_incoming_announce_limit() {
 	printf("test_incoming_announce_limit: END\n");
 }
 
+void test_announce_default_app_data() {
+
+	printf("test_announce_default_app_data: BEGIN\n");
+
+	initRNS();
+
+	RNS::Identity identity(true);
+	RNS::Destination destination(identity, RNS::Type::Destination::IN,
+		RNS::Type::Destination::SINGLE, "test", "defaultappdata");
+	const RNS::Bytes fallback = RNS::bytesFromString("default");
+	const RNS::Bytes explicit_data = RNS::bytesFromString("explicit");
+	destination.set_default_app_data(fallback);
+
+	// A path response passes no app data, so it carries the default.
+	RNS::Packet response = destination.announce({}, true, {RNS::Type::NONE}, {RNS::Type::NONE}, false);
+	TEST_ASSERT_TRUE(response.data().right(fallback.size()) == fallback);
+
+	RNS::Packet announce = destination.announce(explicit_data, false, {RNS::Type::NONE}, {RNS::Type::NONE}, false);
+	TEST_ASSERT_TRUE(announce.data().right(explicit_data.size()) == explicit_data);
+
+	destination.clear_default_app_data();
+	RNS::Packet cleared = destination.announce({}, false, {RNS::Type::NONE}, {RNS::Type::NONE}, false);
+	TEST_ASSERT_FALSE(cleared.data().right(fallback.size()) == fallback);
+
+	RNS::Transport::deregister_destination(destination);
+
+	printf("test_announce_default_app_data: END\n");
+}
+
 void test_prioritize_interfaces() {
 
 	printf("test_prioritize_interfaces: BEGIN\n");
@@ -656,6 +685,7 @@ int runUnityTests(void) {
 
 	//RUN_TEST(test_incoming_announce_limit);
 */
+	RUN_TEST(test_announce_default_app_data);
 	RUN_TEST(test_prioritize_interfaces);
 	RUN_TEST(test_incoming_announce_over_limit);
 	//RUN_TEST(test_incoming_announce_stress);
