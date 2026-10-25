@@ -507,7 +507,8 @@ DestinationEntry empty_destination_entry;
 	// Transport::outbound(), which spins while _jobs_running is set, so the
 	// tick must happen after _jobs_running is cleared (same as `outgoing`).
 	// Ticking inside the jobs section deadlocks the single-threaded loop
-	// until the hardware watchdog resets the device.
+	// until the hardware watchdog resets the device. The link watchdog
+	// sends too (keepalives, closes), so it runs there as well.
 	std::vector<Link> links_to_tick;
 	int count;
 	_jobs_running = true;
@@ -555,17 +556,15 @@ DestinationEntry empty_destination_entry;
 					}
 				}
 
-				// Pump each active link's resource watchdogs. Resource
-				// retransmit/timeout retries depend on this — without it,
-				// a dropped resource part stalls the transfer forever
-				// (we never re-request the missing part, server gives up).
-				// const_cast mirrors the pattern used elsewhere when
-				// iterating std::set<Link> — the wrapper is const but
-				// shared_ptr-backed mutation is the codebase convention.
-				for (auto& link_const : active_links) {
-					if (link_const.status() != Type::Link::CLOSED) {
-						links_to_tick.push_back(link_const);
-					}
+				// Pump each link's watchdogs. Resource retransmit/timeout
+				// retries depend on this; the link watchdog sends keepalives,
+				// closes stale links and times out pending link requests that
+				// are never answered, so pending links are included.
+				for (auto& link : _pending_links) {
+					links_to_tick.push_back(link);
+				}
+				for (auto& link : _active_links) {
+					links_to_tick.push_back(link);
 				}
 
 				_links_last_checked = OS::time();
@@ -1074,8 +1073,11 @@ TRACEF("path_request_conditions=%u", path_request_conditions);
 
 	_jobs_running = false;
 
-	// Pump resource watchdogs outside the jobs section (see links_to_tick)
+	// Run link and resource watchdogs outside the jobs section (see links_to_tick)
 	for (auto& link : links_to_tick) {
+		if (link.status() != Type::Link::CLOSED) {
+			link.__watchdog_job();
+		}
 		if (link.status() != Type::Link::CLOSED) {
 			link.tick_resources();
 		}
