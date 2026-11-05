@@ -3,6 +3,7 @@
 #include "microReticulum/Resource.h"
 #include "microReticulum/Bytes.h"
 #include "microReticulum/Type.h"
+#include "microReticulum/Packet.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -274,6 +275,46 @@ static void test_pack_matches_python_golden() {
 }
 
 
+// Every size a sender produces is accepted, up to one whole encrypted
+// segment; nothing larger, and nothing empty.
+static void test_transfer_size_limit() {
+	TEST_ASSERT_FALSE(Resource::transfer_size_acceptable(0));
+	TEST_ASSERT_TRUE(Resource::transfer_size_acceptable(1));
+	TEST_ASSERT_TRUE(Resource::transfer_size_acceptable(
+		Type::Resource::MAX_EFFICIENT_SIZE + Type::Resource::RANDOM_HASH_SIZE + 64));
+	TEST_ASSERT_TRUE(Resource::transfer_size_acceptable(Type::Resource::MAX_TRANSFER_SIZE));
+	TEST_ASSERT_FALSE(Resource::transfer_size_acceptable(Type::Resource::MAX_TRANSFER_SIZE + 1));
+	TEST_ASSERT_FALSE(Resource::transfer_size_acceptable(0xFFFFFFFFu));
+}
+
+// An advertisement claiming more than any sender could send is refused
+// before accept() builds anything for it: the parts and hashmap would be
+// sized from the claim. The packet has no link, so getting as far as
+// building the receiver would fail.
+static void test_accept_refuses_oversized_advertisement() {
+	for (size_t claimed : {size_t(Type::Resource::MAX_TRANSFER_SIZE) + 1, size_t(0xFFFFFFFFu), size_t(0)}) {
+		ResourceAdvertisement adv;
+		adv._t = claimed;
+		adv._d = 100;
+		adv._n = 1;
+		adv._i = 1;
+		adv._l = 1;
+		uint8_t h[32];
+		for (size_t i = 0; i < sizeof(h); ++i) h[i] = (uint8_t)(i + 1);
+		uint8_t r[4] = {1, 2, 3, 4};
+		uint8_t m[Type::Resource::MAPHASH_LEN] = {9, 9, 9, 9};
+		adv._h = Bytes(h, sizeof(h));
+		adv._r = Bytes(r, sizeof(r));
+		adv._o = Bytes(h, sizeof(h));
+		adv._m = Bytes(m, sizeof(m));
+		adv._e = true;
+
+		Packet packet(Bytes("\x00\x00", 2));
+		packet.plaintext(adv.pack());
+		TEST_ASSERT_FALSE(Resource::accept(packet));
+	}
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -284,6 +325,8 @@ int runUnityTests(void) {
 	RUN_TEST(test_pack_segment_pagination);
 	RUN_TEST(test_unpack_python_golden);
 	RUN_TEST(test_pack_matches_python_golden);
+	RUN_TEST(test_transfer_size_limit);
+	RUN_TEST(test_accept_refuses_oversized_advertisement);
 	return UNITY_END();
 }
 
