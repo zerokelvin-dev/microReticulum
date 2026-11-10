@@ -27,6 +27,7 @@ This API is dependent on the following external libraries:
 - `-DRNS_PERSIST_KNOWN_DESTINATIONS=0` Used to disable persistence of RNS known destinations in file system (enabled by default)
 - `-DRNS_PERSIST_HASHLIST=0` Used to disable persistence of RNS packet hashlist in file system (enabled by default)
 - `-DRNS_USE_PROVISIONING` Used to enable the Provisioning subsystem (auto-started from `Reticulum::start()`). Disk persistence within the subsystem is additionally gated on `-DRNS_USE_FS`. Without this flag, none of the provisioning code is linked into the final binary &mdash; see the [Provisioning](#provisioning) section below.
+- `-DRNS_RESOURCE_MAX_TRANSFER_SIZE=N` Lowers the largest resource transfer size (N bytes) a receiver accepts from an advertisement; larger ones are rejected before any buffers are allocated (default: one maximum-size segment plus its encryption overhead). Setting it is a divergence from the Python reference: larger resources are refused.
 
 ## Memory Management Build Options
 
