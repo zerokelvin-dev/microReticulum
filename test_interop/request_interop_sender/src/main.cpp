@@ -5,9 +5,11 @@
 //   2. On link established, send a 200-byte msgpack-encoded payload via
 //      Link::request("/echo", encoded_data, on_response, on_failed).
 //   3. Python's registered handler echoes the bytes back unchanged.
-//   4. on_response fires with the raw response bytes (from
-//      RequestReceipt::get_response()). Verify byte-equal to original.
-//   5. Tear down the link (cleanup), exit 0 on success.
+//   4. on_response fires with the raw msgpack response (from
+//      RequestReceipt::get_response()). Verify it is the payload as a bin.
+//   5. Ask "/list", whose handler returns a list, and verify the response
+//      is that list's msgpack encoding.
+//   6. Tear down the link (cleanup), exit 0 on success.
 
 #include <microStore/FileSystem.h>
 #include <microStore/Adapters/UniversalFileSystem.h>
@@ -37,17 +39,39 @@ static RNS::Link active_link({RNS::Type::NONE});
 static volatile bool announce_seen     = false;
 static volatile bool response_received = false;
 static volatile bool response_ok       = false;
+static volatile bool list_requested    = false;
+static volatile bool list_received     = false;
+static volatile bool list_ok           = false;
 static volatile bool request_failed    = false;
 
-static void on_response(const RNS::RequestReceipt& receipt) {
+// The payload as a msgpack bin: the request data, and the echoed response.
+static RNS::Bytes encoded_payload() {
+	RNS::Bytes payload = build_payload();
+	MsgPack::Packer p;
+	p.packBinary(payload.data(), payload.size());
+	return RNS::Bytes(p.data(), p.size());
+}
+
+static bool check_response(const RNS::RequestReceipt& receipt,
+                           const char* path, const RNS::Bytes& expected) {
 	RNS::Bytes response = const_cast<RNS::RequestReceipt&>(receipt).get_response();
-	RNS::Bytes expected = build_payload();
 	const bool ok = (response.size() == expected.size()
 	              && memcmp(response.data(), expected.data(), expected.size()) == 0);
-	printf("[cpp] response received: %lu bytes, match=%s\n",
+	printf("[cpp] %s response received: %lu bytes, match=%s\n", path,
 	       (unsigned long)response.size(), ok ? "yes" : "no");
+	return ok;
+}
+
+static void on_response(const RNS::RequestReceipt& receipt) {
+	response_ok       = check_response(receipt, "/echo", encoded_payload());
 	response_received = true;
-	response_ok       = ok;
+}
+
+// Python's [b"\x00\x01", 7, "ok"]: fixarray(3), bin8(2) 00 01, 7, fixstr "ok".
+static void on_list_response(const RNS::RequestReceipt& receipt) {
+	static const uint8_t list[] = {0x93, 0xc4, 0x02, 0x00, 0x01, 0x07, 0xa2, 'o', 'k'};
+	list_ok       = check_response(receipt, "/list", RNS::Bytes(list, sizeof(list)));
+	list_received = true;
 }
 
 static void on_failed(const RNS::RequestReceipt& receipt) {
@@ -66,14 +90,9 @@ static void on_link_established(RNS::Link& link) {
 	// request envelope. The Link::request() contract is that `data` is
 	// already-msgpack-encoded bytes spliced verbatim into the envelope
 	// (see Link.cpp:65-72 pack_request_envelope and the comment at :570).
-	RNS::Bytes payload = build_payload();
-	MsgPack::Packer p;
-	p.packBinary(payload.data(), payload.size());
-	RNS::Bytes encoded(p.data(), p.size());
-
 	printf("[cpp] sending request to /echo: %lu bytes\n",
-	       (unsigned long)payload.size());
-	link.request(RNS::Bytes("/echo"), encoded,
+	       (unsigned long)build_payload().size());
+	link.request(RNS::Bytes("/echo"), encoded_payload(),
 	             on_response, on_failed, /*progress=*/nullptr,
 	             /*timeout=*/10.0);
 }
@@ -123,7 +142,16 @@ int main() {
 
 	while (true) {
 		reticulum.loop();
-		if (response_received || request_failed) {
+		if (response_received && !list_requested && !request_failed) {
+			list_requested = true;
+			// No request data: msgpack nil.
+			static const uint8_t nil = 0xc0;
+			printf("[cpp] sending request to /list\n");
+			active_link.request(RNS::Bytes("/list"), RNS::Bytes(&nil, 1),
+			                    on_list_response, on_failed, /*progress=*/nullptr,
+			                    /*timeout=*/10.0);
+		}
+		if (list_received || request_failed) {
 			// Tear down the link to let Python see a clean close.
 			if (active_link && active_link.status() != RNS::Type::Link::CLOSED) {
 				active_link.teardown();
@@ -131,8 +159,9 @@ int main() {
 			break;
 		}
 		if (RNS::Utilities::OS::time() - start > TIMEOUT_S) {
-			printf("[cpp] TIMEOUT (announce=%d resp=%d failed=%d)\n",
-			       announce_seen?1:0, response_received?1:0, request_failed?1:0);
+			printf("[cpp] TIMEOUT (announce=%d resp=%d list=%d failed=%d)\n",
+			       announce_seen?1:0, response_received?1:0, list_received?1:0,
+			       request_failed?1:0);
 			break;
 		}
 		RNS::Utilities::OS::sleep(0.01);
@@ -146,7 +175,7 @@ int main() {
 	}
 
 	RNS::Transport::deregister_interface(udp_interface);
-	const int rc = response_ok ? 0 : 1;
+	const int rc = (response_ok && list_ok) ? 0 : 1;
 	printf("[cpp] exit code %d\n", rc);
 	return rc;
 }

@@ -3,8 +3,11 @@
 Python receiver for the link request/response interop test.
 
 Registers an echo handler on path "/echo" that returns the request bytes
-verbatim. The C++ side initiates a Link, sends a 200-byte request, and
-expects the same 200 bytes back as the response.
+verbatim, and a handler on "/list" that returns a list. The C++ side
+initiates a Link, sends a 200-byte request to "/echo" and expects the same
+200 bytes back as a msgpack bin, then asks "/list" and expects the list's
+msgpack encoding: a response is passed to the client as raw msgpack, as
+for a response that arrives as a Resource.
 
 Exit codes:
   0 — handler was invoked with the expected payload and echoed back
@@ -32,6 +35,7 @@ EXPECTED_PAYLOAD = bytes(i & 0xff for i in range(200))
 state = {
     "request_seen":  False,
     "request_ok":    False,
+    "list_seen":     False,
     "link_closed":   False,
 }
 
@@ -45,6 +49,16 @@ def echo_handler(path, data, request_id, link_id, remote_identity, requested_at)
     # Echo the bytes back regardless — easier to debug a mismatch on the
     # client side if both ends see the wrong content.
     return data
+
+
+# Not bytes, so the response is not a msgpack bin.
+LIST_RESPONSE = [b"\x00\x01", 7, "ok"]
+
+
+def list_handler(path, data, request_id, link_id, remote_identity, requested_at):
+    print(f"[python] handler called: path={path!r}", flush=True)
+    state["list_seen"] = True
+    return LIST_RESPONSE
 
 
 def on_link_established(link):
@@ -108,6 +122,8 @@ def main():
     destination.set_proof_strategy(RNS.Destination.PROVE_ALL)
     destination.register_request_handler("/echo", echo_handler,
                                          allow=RNS.Destination.ALLOW_ALL)
+    destination.register_request_handler("/list", list_handler,
+                                         allow=RNS.Destination.ALLOW_ALL)
 
     print(f"[python] destination hash: {destination.hash.hex()}", flush=True)
     destination.announce()
@@ -121,7 +137,11 @@ def main():
             last_announce = time.time()
             print("[python] re-announced", flush=True)
 
-        if state["request_seen"]:
+        if state["request_seen"] and not state["request_ok"]:
+            print("[python] FAILURE — payload mismatch on inbound",
+                  flush=True)
+            sys.exit(1)
+        if state["list_seen"]:
             if state["request_ok"]:
                 # Give the response a moment to land on the wire before
                 # exiting (the handler return value is sent asynchronously
@@ -129,10 +149,6 @@ def main():
                 time.sleep(0.5)
                 print("[python] SUCCESS", flush=True)
                 sys.exit(0)
-            else:
-                print("[python] FAILURE — payload mismatch on inbound",
-                      flush=True)
-                sys.exit(1)
 
         time.sleep(0.1)
 

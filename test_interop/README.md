@@ -13,7 +13,7 @@ UDP port pair so the scenarios can coexist on a single host:
 |---------------------------|-----------|------------|---------------------------------------------------------|
 | `packet_interop_sender`   | 14253     | 14252      | DATA packets to a Destination, bidirectional            |
 | `link_interop_sender`     | 14255     | 14254      | Link establish + two-pass teardown                      |
-| `request_interop_sender`  | 14257     | 14256      | `Link::request("/echo", ...)` single-packet RPC         |
+| `request_interop_sender`  | 14257     | 14256      | `Link::request()` single-packet RPC: `/echo`, `/list`    |
 | `resource_interop_sender` | 14243     | 14242      | Full Resource transfer over a Link (1024-byte payload)  |
 
 ## CMake
@@ -66,7 +66,7 @@ Each scenario also has its own driver script if you only want to run one:
 | resource     | `test_interop/run_resource_transfer.sh`  | Full Resource transfer over a Link (1024-byte payload)           |
 | packet       | `test_interop/run_packet_exchange.sh`    | DATA packets to a Destination, bidirectional, 256-byte patterns  |
 | link         | `test_interop/run_link_lifecycle.sh`     | Link establish + two-pass teardown (initiator and destination)   |
-| request      | `test_interop/run_request_response.sh`   | `Link::request("/echo", ...)` single-packet RPC (200-byte payload) |
+| request      | `test_interop/run_request_response.sh`   | `Link::request()` single-packet RPC: `/echo` (200-byte bin) and `/list` (a list), both returned as raw msgpack |
 
 All four currently PASS against Python RNS 1.2.9 at `/Users/chad/python/Reticulum-latest`.
 
